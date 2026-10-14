@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: stock-analysis-back-end
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/stock_analysis}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+finmind:
+  base-url: https://api.finmindtrade.com/api/v4
+  token: ${FINMIND_TOKEN:}
+
+external-data:
+  gov-proxy-base-url:
+
+groq:
+  base-url: https://api.groq.com/openai/v1
+  api-key: ${GROQ_API_KEY:}
+  model: groq/compound-mini
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
