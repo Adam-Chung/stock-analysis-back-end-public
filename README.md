@@ -23,10 +23,8 @@ mvn spring-boot:run
 測試：
 
 ```powershell
-mvn test '-Dtest=!StockAnalysisBackendApplicationTests,!FinMindConfigTest,!GroqClientTest'
+mvn test
 ```
-
-排除的測試需要真實資料庫或對外網路；不能把排除結果解讀為完整 integration 驗證。
 
 ## 安全與部署限制
 

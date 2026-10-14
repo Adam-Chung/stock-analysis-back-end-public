@@ -5,7 +5,7 @@
 提交前請使用 Java 21 執行：
 
 ```powershell
-mvn test '-Dtest=!StockAnalysisBackendApplicationTests,!FinMindConfigTest,!GroqClientTest'
+mvn test
 ```
 
 請勿提交真實憑證、production URL、個人資料、第三方完整內容、未獲授權的資料 fixture 或部署設定。
