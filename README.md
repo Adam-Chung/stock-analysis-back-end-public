@@ -2,6 +2,8 @@
 
 台股分析網站的 REST API，整合估值計算、企業財務體質檢視、股票搜尋與收藏、外部資料更新，以及按需產生的 AI 分析。系統以 Spring Boot 分層架構實作，將 HTTP 介面、應用流程、財務計算、外部資料存取與持久化責任分開。
 
+搭配的 Angular 前端請參閱 [`stock-analysis-front-end-public`](https://github.com/Adam-Chung/stock-analysis-front-end-public)。
+
 ## 核心功能
 
 - **六段目標價估值**：依歷史 PER／PBR、EPS／BPS、殖利率與近十年價格區間，計算便宜價到爆炸貴等六個價位。
@@ -82,6 +84,6 @@ mvn test
 - AI 建議與財務指標僅供研究參考，不構成投資建議。
 - 啟用第三方資料來源前，使用者必須自行確認目前的 Terms of Service、API 或資料 License、robots.txt、rate limit、attribution、隱私、AI processing 與再散布限制。可公開存取不代表已取得使用授權。
 
-## No License
+## License
 
-目前未授予本 repository 內容的使用、修改或散布權利。尚未提供正式 `LICENSE`；任何重用前請先取得 repository owner 的許可。
+本 repository 採用自訂的 [Non-Commercial Personal Use License 1.0](LICENSE)，僅允許個人基於非商業目的下載、執行及私人修改。禁止商業使用、收費代管，以及散布原始或修改後的版本。本專案屬於 source-available software，並非 Open Source software。
