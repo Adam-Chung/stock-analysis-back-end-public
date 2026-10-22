@@ -1,8 +1,8 @@
 # Contributing
 
-這是由 Private source of truth 單向產生的 Public mirror。Public issue 與 Pull Request 可作為建議，但不會自動同步回 Private repository；可接受的修改會由 owner 人工審查、移植到 Private，再重新產生此 mirror。
+這是由 Private source of truth 單向產生的 Public 版本。Public Issue 可用於回報問題與提出建議；本 repository 不直接接受 Pull Request。經 owner 評估採用的建議，會在 Private repository 實作並重新產生此 Public 版本。
 
-提交前請使用 Java 21 執行：
+若 owner 另行邀請提供修改內容，請先使用 Java 21 執行：
 
 ```powershell
 mvn test
