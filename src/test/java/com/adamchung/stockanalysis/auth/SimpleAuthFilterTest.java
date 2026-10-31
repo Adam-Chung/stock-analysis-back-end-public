@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -37,5 +39,18 @@ class SimpleAuthFilterTest {
                 .doFilter(request, response, mock(FilterChain.class));
 
         assertThat(response.getStatus()).isEqualTo(401);
+    }
+
+    /** 存活檢查不需要 Token，可供外部排程直接呼叫。 */
+    @Test
+    void allowsLivenessWithoutToken() throws Exception {
+        AtomicBoolean continued = new AtomicBoolean(false);
+        FilterChain chain = (request, response) -> continued.set(true);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health/liveness");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new SimpleAuthFilter(null).doFilter(request, response, chain);
+
+        assertThat(continued).isTrue();
     }
 }

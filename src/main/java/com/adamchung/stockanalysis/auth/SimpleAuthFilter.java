@@ -17,17 +17,19 @@ import java.io.IOException;
 public class SimpleAuthFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String LIVENESS_PATH = "/api/health/liveness";
     private final SimpleAuthService authService;
 
     public SimpleAuthFilter(SimpleAuthService authService) {
         this.authService = authService;
     }
 
-    /** 登入端點、非 API 路徑及 CORS 預檢不需要 Token。 */
+    /** 登入與存活檢查端點、非 API 路徑及 CORS 預檢不需要 Token。 */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !request.getRequestURI().startsWith("/api/")
                 || request.getRequestURI().equals("/api/auth/login")
+                || request.getRequestURI().equals(LIVENESS_PATH)
                 || request.getMethod().equals("OPTIONS");
     }
 
