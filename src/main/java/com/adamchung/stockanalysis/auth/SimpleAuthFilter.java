@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -19,15 +20,18 @@ public class SimpleAuthFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String LIVENESS_PATH = "/api/health/liveness";
     private final SimpleAuthService authService;
+    private final boolean authEnabled;
 
-    public SimpleAuthFilter(SimpleAuthService authService) {
+    public SimpleAuthFilter(SimpleAuthService authService, @Value("${app.auth.enabled:false}") boolean authEnabled) {
         this.authService = authService;
+        this.authEnabled = authEnabled;
     }
 
-    /** 登入與存活檢查端點、非 API 路徑及 CORS 預檢不需要 Token。 */
+    /** 登入功能停用時略過全部驗證；啟用時放行登入、存活檢查、非 API 路徑及 CORS 預檢。 */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/")
+        return !authEnabled
+                || !request.getRequestURI().startsWith("/api/")
                 || request.getRequestURI().equals("/api/auth/login")
                 || request.getRequestURI().equals(LIVENESS_PATH)
                 || request.getMethod().equals("OPTIONS");

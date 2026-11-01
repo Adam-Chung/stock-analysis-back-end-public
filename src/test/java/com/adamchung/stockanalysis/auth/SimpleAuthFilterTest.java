@@ -24,7 +24,7 @@ class SimpleAuthFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(service.isValid("valid-token")).thenReturn(true);
 
-        new SimpleAuthFilter(service).doFilter(request, response, chain);
+        new SimpleAuthFilter(service, true).doFilter(request, response, chain);
 
         verify(chain).doFilter(request, response);
     }
@@ -35,7 +35,7 @@ class SimpleAuthFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/stocks/search");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        new SimpleAuthFilter(mock(SimpleAuthService.class))
+        new SimpleAuthFilter(mock(SimpleAuthService.class), true)
                 .doFilter(request, response, mock(FilterChain.class));
 
         assertThat(response.getStatus()).isEqualTo(401);
@@ -49,7 +49,20 @@ class SimpleAuthFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health/liveness");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        new SimpleAuthFilter(null).doFilter(request, response, chain);
+        new SimpleAuthFilter(null, true).doFilter(request, response, chain);
+
+        assertThat(continued).isTrue();
+    }
+
+    /** 登入功能停用時，API 不需要 Token 也能繼續處理。 */
+    @Test
+    void allowsApiWithoutTokenWhenAuthIsDisabled() throws Exception {
+        AtomicBoolean continued = new AtomicBoolean(false);
+        FilterChain chain = (request, response) -> continued.set(true);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/stocks/search");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new SimpleAuthFilter(null, false).doFilter(request, response, chain);
 
         assertThat(continued).isTrue();
     }
