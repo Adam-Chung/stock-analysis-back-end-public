@@ -50,7 +50,7 @@ class HealthCheckAiSuggestionServiceTest {
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(new GroqClient.GeneratedSuggestion(
                 " 不達標原因。  \n  值不值得投資的結論。\n\n財報體質的結論。僅供研究參考，非投資建議 ",
-                "groq/compound-mini"));
+                "openai/gpt-oss-20b"));
         when(repository.findById("1216")).thenReturn(Optional.empty());
         when(repository.saveAndFlush(any(StockHealthAiSuggestionEntity.class))).thenAnswer(invocation -> {
             StockHealthAiSuggestionEntity saved = invocation.getArgument(0);
@@ -79,7 +79,7 @@ class HealthCheckAiSuggestionServiceTest {
         when(healthCheckService.get("1216")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
-                new GroqClient.GeneratedSuggestion("新的建議內容", "groq/compound-mini"));
+                new GroqClient.GeneratedSuggestion("新的建議內容", "openai/gpt-oss-20b"));
         StockHealthAiSuggestionEntity existing = new StockHealthAiSuggestionEntity();
         existing.setStockId("1216");
         existing.setSuggestionText("舊的建議內容");
@@ -100,7 +100,7 @@ class HealthCheckAiSuggestionServiceTest {
         when(healthCheckService.get("1216")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
-                new GroqClient.GeneratedSuggestion("建".repeat(401), "groq/compound-mini"));
+                new GroqClient.GeneratedSuggestion("建".repeat(401), "openai/gpt-oss-20b"));
 
         assertThatThrownBy(() -> service.generate("1216"))
                 .isInstanceOf(GroqClientException.class)
@@ -115,7 +115,7 @@ class HealthCheckAiSuggestionServiceTest {
         when(healthCheckService.get("1216")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
-                new GroqClient.GeneratedSuggestion("   ", "groq/compound-mini"));
+                new GroqClient.GeneratedSuggestion("   ", "openai/gpt-oss-20b"));
 
         assertThatThrownBy(() -> service.generate("1216")).isInstanceOf(GroqClientException.class);
         verify(repository, never()).saveAndFlush(any());

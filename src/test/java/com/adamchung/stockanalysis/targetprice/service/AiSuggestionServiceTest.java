@@ -49,7 +49,7 @@ class AiSuggestionServiceTest {
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(new GroqClient.GeneratedSuggestion(
                 " 可能機會的說明。  \n  主要風險的說明。僅供研究參考，非投資建議 ",
-                "groq/compound-mini"));
+                "openai/gpt-oss-20b"));
         when(repository.findById("2330")).thenReturn(Optional.empty());
         when(repository.saveAndFlush(any(StockAiSuggestionEntity.class))).thenAnswer(invocation -> {
             StockAiSuggestionEntity saved = invocation.getArgument(0);
@@ -78,7 +78,7 @@ class AiSuggestionServiceTest {
         when(targetPriceService.getPersisted("2330")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
-                new GroqClient.GeneratedSuggestion("建".repeat(201), "groq/compound-mini"));
+                new GroqClient.GeneratedSuggestion("建".repeat(201), "openai/gpt-oss-20b"));
 
         assertThatThrownBy(() -> service.generate("2330"))
                 .isInstanceOf(GroqClientException.class)

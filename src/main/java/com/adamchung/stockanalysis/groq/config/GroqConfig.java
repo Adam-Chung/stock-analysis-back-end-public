@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
-/** 設定 Groq Compound Mini 專用 HTTP client。 */
+/** 設定 Groq chat completions 專用 HTTP client。 */
 @Configuration
 @EnableConfigurationProperties(GroqProperties.class)
 public class GroqConfig {

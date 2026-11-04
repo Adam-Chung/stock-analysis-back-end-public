@@ -31,7 +31,9 @@ external-data:
 groq:
   base-url: https://api.groq.com/openai/v1
   api-key: ${GROQ_API_KEY:}
-  model: groq/compound-mini
+  models:
+    - ${GROQ_PRIMARY_MODEL:openai/gpt-oss-20b}
+    - ${GROQ_FALLBACK_MODEL:openai/gpt-oss-120b}
 
 app:
   cors:

@@ -443,7 +443,7 @@ FinMind，走同一張表、同一套寫入邏輯。
 |---|---|---|
 | stock_id | VARCHAR(10) PK/FK → stock | |
 | suggestion_text | TEXT | AI 建議內容，prompt 端限制400字以內（比照 4.8 `stock_ai_suggestion` 但上限拉高），DB 不額外設硬限制 |
-| model_name | VARCHAR(50) | 例如 `'groq/compound-mini'` |
+| model_name | VARCHAR(50) | 例如 `'openai/gpt-oss-20b'` |
 
 標準四個稽核欄位；每支股票只保留最新一筆，「上次更新時間」＝這張表的 `updated_at`——與 4.8
 `stock_ai_suggestion`（目標價頁 AI 建議）完全同構但獨立一張表，兩個功能各自的 prompt/內容
