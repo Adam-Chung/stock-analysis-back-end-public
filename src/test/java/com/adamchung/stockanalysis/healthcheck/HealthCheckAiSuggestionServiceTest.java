@@ -95,16 +95,32 @@ class HealthCheckAiSuggestionServiceTest {
     }
 
     @Test
-    void generate_does_not_overwrite_cache_when_response_exceeds_400_characters() {
+    void generate_saves_response_that_exceeds_prompt_target_but_stays_within_safety_limit() {
         HealthCheckResponse snapshot = mock(HealthCheckResponse.class);
         when(healthCheckService.get("1216")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
                 new GroqClient.GeneratedSuggestion("建".repeat(401), "openai/gpt-oss-20b"));
+        when(repository.findById("1216")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(StockHealthAiSuggestionEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.generate("1216");
+
+        verify(repository).saveAndFlush(any(StockHealthAiSuggestionEntity.class));
+    }
+
+    @Test
+    void generate_does_not_overwrite_cache_when_response_exceeds_1200_character_safety_limit() {
+        HealthCheckResponse snapshot = mock(HealthCheckResponse.class);
+        when(healthCheckService.get("1216")).thenReturn(snapshot);
+        when(promptBuilder.build(snapshot)).thenReturn("prompt");
+        when(groqClient.generate("prompt")).thenReturn(
+                new GroqClient.GeneratedSuggestion("建".repeat(1_201), "openai/gpt-oss-20b"));
 
         assertThatThrownBy(() -> service.generate("1216"))
                 .isInstanceOf(GroqClientException.class)
-                .hasMessageContaining("400");
+                .hasMessageContaining("1200");
         verify(repository, never()).findById("1216");
         verify(repository, never()).saveAndFlush(any());
     }

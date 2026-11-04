@@ -73,16 +73,32 @@ class AiSuggestionServiceTest {
     }
 
     @Test
-    void generate_does_not_overwrite_cache_when_response_exceeds_200_characters() {
+    void generate_saves_response_that_exceeds_prompt_target_but_stays_within_safety_limit() {
         TargetPriceResponse snapshot = org.mockito.Mockito.mock(TargetPriceResponse.class);
         when(targetPriceService.getPersisted("2330")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
                 new GroqClient.GeneratedSuggestion("建".repeat(201), "openai/gpt-oss-20b"));
+        when(repository.findById("2330")).thenReturn(Optional.empty());
+        when(repository.saveAndFlush(any(StockAiSuggestionEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.generate("2330");
+
+        verify(repository).saveAndFlush(any(StockAiSuggestionEntity.class));
+    }
+
+    @Test
+    void generate_does_not_overwrite_cache_when_response_exceeds_800_character_safety_limit() {
+        TargetPriceResponse snapshot = org.mockito.Mockito.mock(TargetPriceResponse.class);
+        when(targetPriceService.getPersisted("2330")).thenReturn(snapshot);
+        when(promptBuilder.build(snapshot)).thenReturn("prompt");
+        when(groqClient.generate("prompt")).thenReturn(
+                new GroqClient.GeneratedSuggestion("建".repeat(801), "openai/gpt-oss-20b"));
 
         assertThatThrownBy(() -> service.generate("2330"))
                 .isInstanceOf(GroqClientException.class)
-                .hasMessageContaining("200");
+                .hasMessageContaining("800");
         verify(repository, never()).findById("2330");
         verify(repository, never()).saveAndFlush(any());
     }

@@ -11,13 +11,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 產生並快取每檔股票最新的企業體質檢視 AI 投資建議（DEC-068 後續實作）。
- * 逐字比照 {@code targetprice.service.AiSuggestionService}，長度上限拉高到 400字，
+ * 逐字比照 {@code targetprice.service.AiSuggestionService}，prompt 的期望長度為 400 字，
  * 因為除了機會/風險摘要外還要求「不達標原因」＋「投資／財報體質」兩個明確結論。
+ * 由於模型不保證嚴格遵守字數，後端另以 1,200 字作為防止異常大量輸出的安全上限。
  */
 @Service
 public class HealthCheckAiSuggestionService {
 
-    static final int MAX_SUGGESTION_LENGTH = 400;
+    static final int MAX_SUGGESTION_LENGTH = 1_200;
     private static final int MAX_MODEL_NAME_LENGTH = 50;
 
     private final HealthCheckApplicationService healthCheckService;

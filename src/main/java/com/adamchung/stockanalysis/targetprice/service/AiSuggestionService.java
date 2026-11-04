@@ -10,11 +10,14 @@ import com.adamchung.stockanalysis.targetprice.repository.StockAiSuggestionRepos
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 產生並快取每檔股票最新的 Groq Compound Mini 建議。 */
+/**
+ * 產生並快取每檔股票最新的 Groq AI 建議。prompt 的期望長度為 200 字；
+ * 由於模型不保證嚴格遵守字數，後端另以 800 字作為防止異常大量輸出的安全上限。
+ */
 @Service
 public class AiSuggestionService {
 
-    static final int MAX_SUGGESTION_LENGTH = 200;
+    static final int MAX_SUGGESTION_LENGTH = 800;
     private static final int MAX_MODEL_NAME_LENGTH = 50;
 
     private final TargetPriceApplicationService targetPriceService;

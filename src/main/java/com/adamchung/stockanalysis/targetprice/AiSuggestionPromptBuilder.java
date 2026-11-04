@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.stream.Collectors;
 
-/** 只使用已落地的計算結果，建立穩定的 Groq Compound Mini prompt。 */
+/** 只使用已落地的計算結果，建立穩定的 Groq prompt。 */
 @Component
 public class AiSuggestionPromptBuilder {
 
@@ -14,7 +14,7 @@ public class AiSuggestionPromptBuilder {
      * 組成投資分析用的 prompt，刻意不納入使用者自行輸入的備註或投資策略。
      *
      * @param snapshot 目前已落地的目標價快照
-     * @return 可交給 Compound Mini chat completions 的 prompt
+     * @return 可交給 Groq chat completions 的 prompt
      */
     public String build(TargetPriceResponse snapshot) {
         String tiers = snapshot.tiers().stream()

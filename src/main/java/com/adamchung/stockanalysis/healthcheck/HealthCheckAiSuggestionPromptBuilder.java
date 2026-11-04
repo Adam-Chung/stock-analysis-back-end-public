@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 只使用已落地的體質檢視資料建立穩定的 Groq Compound Mini prompt（比照
+ * 只使用已落地的體質檢視資料建立穩定的 Groq prompt（比照
  * {@code targetprice.AiSuggestionPromptBuilder}）。刻意排除使用者自行輸入的
  * {@code profile.customNote} 與各細項筆記，避免 prompt-injection（比照 DEC-016）。
  */
@@ -22,7 +22,7 @@ public class HealthCheckAiSuggestionPromptBuilder {
      * 要求 Groq 用內建 Web Search 查證不達標原因並給出投資與財報體質兩個結論。
      *
      * @param snapshot 目前已落地的企業體質檢視快照
-     * @return 可交給 Compound Mini chat completions 的 prompt
+     * @return 可交給 Groq chat completions 的 prompt
      */
     public String build(HealthCheckResponse snapshot) {
         Overview overview = summarize(snapshot);
