@@ -7,6 +7,8 @@ import com.adamchung.stockanalysis.healthcheck.healthchecksync.dto.ExternalSyncR
 import com.adamchung.stockanalysis.healthcheck.healthchecksync.dto.FinMindHealthCheckSyncResult;
 import com.adamchung.stockanalysis.healthcheck.healthchecksync.FinMindHealthCheckSyncService;
 import com.adamchung.stockanalysis.healthcheck.healthchecksync.calculator.QuarterlyFactsJoiner;
+import com.adamchung.stockanalysis.quota.DailyUsageService;
+import com.adamchung.stockanalysis.quota.SharedSyncFreshnessService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -43,14 +45,20 @@ public class ExternalHealthDataSyncController {
     private final ExternalHealthDataSyncService externalSyncService;
     private final FinMindHealthCheckSyncService finMindSyncService;
     private final HealthCheckApplicationService healthCheckApplicationService;
+    private final DailyUsageService dailyUsageService;
+    private final SharedSyncFreshnessService sharedSyncFreshnessService;
 
     public ExternalHealthDataSyncController(
             ExternalHealthDataSyncService externalSyncService,
             FinMindHealthCheckSyncService finMindSyncService,
-            HealthCheckApplicationService healthCheckApplicationService) {
+            HealthCheckApplicationService healthCheckApplicationService,
+            DailyUsageService dailyUsageService,
+            SharedSyncFreshnessService sharedSyncFreshnessService) {
         this.externalSyncService = externalSyncService;
         this.finMindSyncService = finMindSyncService;
         this.healthCheckApplicationService = healthCheckApplicationService;
+        this.dailyUsageService = dailyUsageService;
+        this.sharedSyncFreshnessService = sharedSyncFreshnessService;
     }
 
     @Operation(summary = "同步外部資料來源",
@@ -58,6 +66,11 @@ public class ExternalHealthDataSyncController {
                     + "任一來源成功即回 200，失敗來源記錄於 warnings")
     @PostMapping
     public ResponseEntity<ExternalSyncResult> sync(@PathVariable String stockId) {
+        if (sharedSyncFreshnessService.isHealthSyncFresh(stockId)) {
+            return ResponseEntity.ok(new ExternalSyncResult(
+                    stockId, List.of(), List.of("已使用六小時內的共用最新資料，未重複呼叫外部 API")));
+        }
+        dailyUsageService.reserveHealthExternalSync();
         List<String> syncedMetricKeys = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         boolean anySourceSucceeded = false;
@@ -82,6 +95,7 @@ public class ExternalHealthDataSyncController {
         }
 
         if (anySourceSucceeded) {
+            sharedSyncFreshnessService.markHealthSyncSuccess(stockId);
             // 「資料季度」優先採用這次 FinMind 財報三表實際抓到的最新季度（DEC-067）；
             // 只有 TWSE/銀行局來源成功、FinMind 沒有回傳任何財報資料時，才退回用今天的曆季推算
             // （銀行監理指標本身就沒有「財報季度」概念，用曆季當作保守估計）。

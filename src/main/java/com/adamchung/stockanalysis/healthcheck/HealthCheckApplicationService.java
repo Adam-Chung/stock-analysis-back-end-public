@@ -1,6 +1,6 @@
 package com.adamchung.stockanalysis.healthcheck;
 
-import com.adamchung.stockanalysis.common.AuditActors;
+import com.adamchung.stockanalysis.auth.CurrentUser;
 import com.adamchung.stockanalysis.healthcheck.calculator.HealthCheckEvaluator;
 import com.adamchung.stockanalysis.healthcheck.calculator.HealthCheckTemplateResolver;
 import com.adamchung.stockanalysis.healthcheck.definition.HealthCheckCategoryDefinition;
@@ -9,12 +9,7 @@ import com.adamchung.stockanalysis.healthcheck.definition.HealthCheckTemplateDef
 import com.adamchung.stockanalysis.healthcheck.dto.HealthCheckProfileRequest;
 import com.adamchung.stockanalysis.healthcheck.dto.HealthCheckResponse;
 import com.adamchung.stockanalysis.healthcheck.dto.HealthCheckSnapshotRequest;
-import com.adamchung.stockanalysis.healthcheck.entity.StockHealthAiSuggestionEntity;
-import com.adamchung.stockanalysis.healthcheck.entity.StockHealthProfileEntity;
-import com.adamchung.stockanalysis.healthcheck.entity.StockHealthSnapshotEntity;
 import com.adamchung.stockanalysis.healthcheck.enums.HealthCheckTemplate;
-import com.adamchung.stockanalysis.healthcheck.repository.StockHealthAiSuggestionRepository;
-import com.adamchung.stockanalysis.healthcheck.repository.StockHealthProfileRepository;
 import com.adamchung.stockanalysis.healthcheck.repository.StockHealthSnapshotRepository;
 import com.adamchung.stockanalysis.stock.entity.StockEntity;
 import com.adamchung.stockanalysis.stock.entity.StockPriceYearlyEntity;
@@ -22,10 +17,10 @@ import com.adamchung.stockanalysis.stock.entity.StockValuationYearlyEntity;
 import com.adamchung.stockanalysis.stock.repository.StockPriceYearlyRepository;
 import com.adamchung.stockanalysis.stock.repository.StockRepository;
 import com.adamchung.stockanalysis.stock.repository.StockValuationYearlyRepository;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -41,25 +36,22 @@ import java.util.stream.Collectors;
 public class HealthCheckApplicationService {
 
     private final StockRepository stockRepository;
-    private final StockHealthProfileRepository profileRepository;
+    private final UserDataStore userDataStore;
     private final StockHealthSnapshotRepository snapshotRepository;
     private final StockPriceYearlyRepository priceYearlyRepository;
     private final StockValuationYearlyRepository valuationYearlyRepository;
-    private final StockHealthAiSuggestionRepository aiSuggestionRepository;
 
     public HealthCheckApplicationService(
             StockRepository stockRepository,
-            StockHealthProfileRepository profileRepository,
+            UserDataStore userDataStore,
             StockHealthSnapshotRepository snapshotRepository,
             StockPriceYearlyRepository priceYearlyRepository,
-            StockValuationYearlyRepository valuationYearlyRepository,
-            StockHealthAiSuggestionRepository aiSuggestionRepository) {
+            StockValuationYearlyRepository valuationYearlyRepository) {
         this.stockRepository = stockRepository;
-        this.profileRepository = profileRepository;
+        this.userDataStore = userDataStore;
         this.snapshotRepository = snapshotRepository;
         this.priceYearlyRepository = priceYearlyRepository;
         this.valuationYearlyRepository = valuationYearlyRepository;
-        this.aiSuggestionRepository = aiSuggestionRepository;
     }
 
     /**
@@ -74,11 +66,13 @@ public class HealthCheckApplicationService {
     public HealthCheckResponse get(String stockId) {
         StockEntity stock = requireStock(stockId);
         HealthCheckTemplate template = HealthCheckTemplateResolver.resolve(stock.getIndustryCategory());
-        StockHealthProfileEntity profile = profileRepository.findById(stockId).orElse(null);
+        long userId = CurrentUser.id();
+        UserDataStore.HealthProfile profile = userDataStore.healthProfile(userId, stockId).orElse(null);
+        Map<UserDataStore.HealthNoteKey, String> userNotes = userDataStore.healthNotes(userId, stockId);
 
         List<HealthCheckResponse.CategoryView> categories = HealthCheckTemplateDefinitions.categoriesFor(template)
                 .stream()
-                .map(category -> toCategoryView(stockId, category))
+                .map(category -> toCategoryView(stockId, category, userNotes))
                 .toList();
 
         List<HealthCheckResponse.YearlyPriceTrendView> priceTrend =
@@ -93,7 +87,7 @@ public class HealthCheckApplicationService {
                 toProfileView(profile),
                 categories,
                 priceTrend,
-                toAiSuggestionView(stockId));
+                toAiSuggestionView(userId, stockId));
     }
 
     /**
@@ -103,14 +97,10 @@ public class HealthCheckApplicationService {
      * @param request 使用者編輯的內容
      * @return 更新後的完整畫面回應
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public HealthCheckResponse updateProfile(String stockId, HealthCheckProfileRequest request) {
         requireStock(stockId);
-        StockHealthProfileEntity profile = loadOrCreateProfile(stockId);
-        profile.setProfile(request.profile());
-        profile.setCustomNote(request.customNote());
-        profile.setUpdatedBy(AuditActors.DEFAULT_USER);
-        profileRepository.save(profile);
+        userDataStore.saveHealthProfile(CurrentUser.id(), stockId, request.profile(), request.customNote());
         return get(stockId);
     }
 
@@ -124,7 +114,7 @@ public class HealthCheckApplicationService {
      * @throws IllegalArgumentException entries 裡出現不屬於這支股票所套用模板的 metric_key
      *         （DEC-039：metric_key 不做資料庫層 FK，改由應用層驗證）
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public HealthCheckResponse updateSnapshot(String stockId, HealthCheckSnapshotRequest request) {
         StockEntity stock = requireStock(stockId);
         HealthCheckTemplate template = HealthCheckTemplateResolver.resolve(stock.getIndustryCategory());
@@ -135,18 +125,10 @@ public class HealthCheckApplicationService {
                 throw new IllegalArgumentException(
                         "metric_key '" + entry.metricKey() + "' 不屬於這支股票套用的模板（" + template + "）");
             }
-            StockHealthSnapshotEntity row = snapshotRepository
-                    .findByStockIdAndQuarterAndMetricKey(stockId, entry.period(), entry.metricKey())
-                    .orElseGet(() -> newSnapshotRow(stockId, entry.period(), entry.metricKey()));
-            row.setNote(entry.note());
-            row.setUpdatedBy(AuditActors.DEFAULT_USER);
-            snapshotRepository.save(row);
+            userDataStore.saveHealthNote(
+                    CurrentUser.id(), stockId, entry.period(), entry.metricKey(), entry.note());
         }
-
-        StockHealthProfileEntity profile = loadOrCreateProfile(stockId);
-        profile.setLastReviewedQuarter(request.reviewedQuarter());
-        profile.setUpdatedBy(AuditActors.DEFAULT_USER);
-        profileRepository.save(profile);
+        userDataStore.touchHealthReview(CurrentUser.id(), stockId, request.reviewedQuarter());
 
         return get(stockId);
     }
@@ -171,30 +153,35 @@ public class HealthCheckApplicationService {
      * @param reviewedQuarter 「資料季度」的新值——優先採用 FinMind 財報三表這次實際抓到的
      *                        最新季度，沒有資料時才退回今天所屬的曆季（DEC-067）
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public void touchProfileAfterExternalSync(String stockId, String reviewedQuarter) {
         requireStock(stockId);
-        StockHealthProfileEntity profile = loadOrCreateProfile(stockId);
-        profile.setLastReviewedQuarter(reviewedQuarter);
-        profile.setUpdatedBy(AuditActors.EXTERNAL_SYNC);
-        profile.setUpdatedAt(Instant.now());
-        profileRepository.save(profile);
+        userDataStore.touchHealthReview(CurrentUser.id(), stockId, reviewedQuarter);
     }
 
-    private HealthCheckResponse.CategoryView toCategoryView(String stockId, HealthCheckCategoryDefinition category) {
+    private HealthCheckResponse.CategoryView toCategoryView(
+            String stockId,
+            HealthCheckCategoryDefinition category,
+            Map<UserDataStore.HealthNoteKey, String> userNotes) {
         List<HealthCheckResponse.MetricView> metrics = category.metrics().stream()
-                .map(metric -> toMetricView(stockId, metric, category.historyLimit()))
+                .map(metric -> toMetricView(stockId, metric, category.historyLimit(), userNotes))
                 .toList();
         return new HealthCheckResponse.CategoryView(category.key(), category.name(), category.thresholdDescription(), metrics);
     }
 
-    private HealthCheckResponse.MetricView toMetricView(String stockId, HealthCheckMetricDefinition metric, int historyLimit) {
+    private HealthCheckResponse.MetricView toMetricView(
+            String stockId,
+            HealthCheckMetricDefinition metric,
+            int historyLimit,
+            Map<UserDataStore.HealthNoteKey, String> userNotes) {
         List<HealthCheckResponse.PeriodValueView> periods = snapshotRepository
                 .findByStockIdAndMetricKeyOrderByQuarterDesc(stockId, metric.key())
                 .stream()
                 .limit(historyLimit)
                 .map(row -> new HealthCheckResponse.PeriodValueView(
-                        row.getQuarter(), row.getValue(), HealthCheckEvaluator.evaluate(metric, row.getValue()), row.getNote()))
+                        row.getQuarter(), row.getValue(), HealthCheckEvaluator.evaluate(metric, row.getValue()),
+                        userNotes.getOrDefault(
+                                new UserDataStore.HealthNoteKey(row.getQuarter(), row.getMetricKey()), row.getNote())))
                 .toList();
         return new HealthCheckResponse.MetricView(
                 metric.key(), metric.name(), metric.unit(), metric.evalType(), metric.threshold(), metric.thresholdLabel(),
@@ -222,37 +209,19 @@ public class HealthCheckApplicationService {
                 valuation != null ? valuation.getAvgPbr() : null);
     }
 
-    private HealthCheckResponse.ProfileView toProfileView(StockHealthProfileEntity profile) {
+    private HealthCheckResponse.ProfileView toProfileView(UserDataStore.HealthProfile profile) {
         if (profile == null) {
             return new HealthCheckResponse.ProfileView(null, null, null, null);
         }
         return new HealthCheckResponse.ProfileView(
-                profile.getProfile(), profile.getCustomNote(), profile.getLastReviewedQuarter(), profile.getUpdatedAt());
+                profile.profile(), profile.customNote(), profile.lastReviewedQuarter(), profile.updatedAt());
     }
 
-    private HealthCheckResponse.AiSuggestionView toAiSuggestionView(String stockId) {
-        StockHealthAiSuggestionEntity suggestion = aiSuggestionRepository.findById(stockId).orElse(null);
-        return suggestion == null
-                ? null
-                : new HealthCheckResponse.AiSuggestionView(suggestion.getSuggestionText(), suggestion.getUpdatedAt());
-    }
-
-    private StockHealthProfileEntity loadOrCreateProfile(String stockId) {
-        return profileRepository.findById(stockId).orElseGet(() -> {
-            StockHealthProfileEntity profile = new StockHealthProfileEntity();
-            profile.setStockId(stockId);
-            profile.setCreatedBy(AuditActors.DEFAULT_USER);
-            return profile;
-        });
-    }
-
-    private StockHealthSnapshotEntity newSnapshotRow(String stockId, String quarter, String metricKey) {
-        StockHealthSnapshotEntity row = new StockHealthSnapshotEntity();
-        row.setStockId(stockId);
-        row.setQuarter(quarter);
-        row.setMetricKey(metricKey);
-        row.setCreatedBy(AuditActors.DEFAULT_USER);
-        return row;
+    private HealthCheckResponse.AiSuggestionView toAiSuggestionView(long userId, String stockId) {
+        return userDataStore.healthAiSuggestion(userId, stockId)
+                .map(suggestion -> new HealthCheckResponse.AiSuggestionView(
+                        suggestion.suggestionText(), suggestion.updatedAt()))
+                .orElse(null);
     }
 
     private Set<String> validMetricKeys(HealthCheckTemplate template) {

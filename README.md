@@ -20,6 +20,8 @@ See [`stock-analysis-front-end-public`](https://github.com/Adam-Chung/stock-anal
   **Price-trend data**: Provides weekly candlestick data so the frontend can present price trends alongside valuation ranges.
 - **股票搜尋與收藏**：維護股票目錄、搜尋股票、管理收藏清單，並批次更新收藏股票的估值結果。<br>
   **Stock search and favorites**: Maintains the stock directory, supports stock search and favorite-list management, and batch-updates valuation results for favorite stocks.
+- **Google 登入與個人資料隔離**：以 Google ID token 建立伺服器端 session，依使用者隔離收藏、估值設定、筆記與 AI 建議；股票與財報資料則共用。<br>
+  **Google sign-in and personal-data isolation**: Establishes server-side sessions from Google ID tokens, isolates favorites, valuation settings, notes, and AI suggestions per user, and shares stock and financial-statement data.
 - **外部資料整合**：整合 FinMind、TWSE 與金融監督管理委員會公開資料，集中處理節流、有限重試、錯誤轉換與資料更新流程。<br>
   **External data integration**: Integrates public data from FinMind, TWSE, and Taiwan's Financial Supervisory Commission, with centralized throttling, bounded retries, error translation, and data-update workflows.
 - **按需 AI 分析**：只有在使用者主動觸發時才呼叫 Groq，並保存每支股票最新的估值或企業體質建議，避免頁面載入時重複消耗額度。<br>
@@ -72,6 +74,7 @@ flowchart LR
 | `GET /api/stocks/{stockId}/weekly-prices` | 取得週 K 線資料<br>Retrieve weekly candlestick data |
 | `GET /api/stocks/search` | 搜尋股票目錄<br>Search the stock directory |
 | `/api/favorites` | 管理及批次更新收藏股票<br>Manage and batch-update favorite stocks |
+| `/api/auth/*` | Google 登入、session、登出與帳號管理<br>Google sign-in, session, sign-out, and account management |
 
 完整介面可在啟動後由 `/swagger-ui.html` 查看。
 
@@ -119,10 +122,12 @@ The service runs at `http://localhost:8080` by default, with Swagger UI availabl
 
 ### Configuration and limitations
 
-- 資料庫密碼、FinMind token 與 Groq API key 必須透過環境變數或 secret storage 注入；`.env.example` 只有示意值。<br>
-  Database passwords, FinMind tokens, and Groq API keys must be injected through environment variables or secret storage; `.env.example` contains placeholder values only.
-- Simple auth 是單一使用者原型，密碼與 session token 設計不符合 production 安全需求，不應直接暴露於公網。<br>
-  Simple auth is a single-user prototype. Its password and session-token design does not meet production security requirements and must not be exposed directly to the public internet.
+- 資料庫密碼、FinMind token、Groq API key、Google OAuth client ID 與初始管理者 email 必須透過環境變數或 secret storage 注入；`.env.example` 只有示意值。<br>
+  Database passwords, FinMind tokens, Groq API keys, the Google OAuth client ID, and the initial administrator email must be injected through environment variables or secret storage; `.env.example` contains placeholder values only.
+- Google 登入採伺服器端 session 與 HttpOnly cookie；自行公開部署前仍須建立自己的 Google OAuth client、設定正確 origin，並驗證 HTTPS、cookie、CSRF、CORS、權限停用及 rate-limit 行為。<br>
+  Google sign-in uses server-side sessions and an HttpOnly cookie. Before any public deployment, create your own Google OAuth client, configure the correct origins, and verify HTTPS, cookie, CSRF, CORS, account-disablement, and rate-limit behavior.
+- 一般使用者受每日個人額度限制；ADMIN 略過個人額度，但 AI 仍受全站免費額度保護。<br>
+  Regular users are subject to per-user daily limits. ADMIN bypasses personal limits, while AI usage remains protected by the site-wide free-tier limit.
 - AI 建議與財務指標僅供研究參考，不構成投資建議。<br>
   AI suggestions and financial indicators are for research purposes only and do not constitute investment advice.
 - 啟用第三方資料來源前，使用者必須自行確認目前的 Terms of Service、API 或資料 License、`robots.txt`、rate limit、attribution、隱私、AI processing 與再散布限制。可公開存取不代表已取得使用授權。<br>

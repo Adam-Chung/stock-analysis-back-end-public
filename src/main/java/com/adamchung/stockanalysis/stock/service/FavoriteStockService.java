@@ -1,25 +1,24 @@
 package com.adamchung.stockanalysis.stock.service;
 
-import com.adamchung.stockanalysis.common.AuditActors;
+import com.adamchung.stockanalysis.auth.CurrentUser;
 import com.adamchung.stockanalysis.stock.dto.StockSummary;
-import com.adamchung.stockanalysis.stock.entity.FavoriteStockEntity;
-import com.adamchung.stockanalysis.stock.repository.FavoriteStockRepository;
 import com.adamchung.stockanalysis.stock.repository.StockRepository;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.NoSuchElementException;
 
-/** 我的最愛（DB-01 8.2/8.3）。目前尚無登入機制——單一收藏清單，非個別使用者各自獨立（DEC-21、DEC-27）。 */
+/** 我的最愛；收藏清單以目前 Google 使用者隔離。 */
 @Service
 public class FavoriteStockService {
 
-    private final FavoriteStockRepository favoriteStockRepository;
+    private final UserDataStore userDataStore;
     private final StockRepository stockRepository;
 
-    public FavoriteStockService(FavoriteStockRepository favoriteStockRepository, StockRepository stockRepository) {
-        this.favoriteStockRepository = favoriteStockRepository;
+    public FavoriteStockService(UserDataStore userDataStore, StockRepository stockRepository) {
+        this.userDataStore = userDataStore;
         this.stockRepository = stockRepository;
     }
 
@@ -29,10 +28,10 @@ public class FavoriteStockService {
      * @return 已收藏的股票摘要清單；股票本身找不到時退回用股票代號當名稱顯示
      */
     public List<StockSummary> list() {
-        return favoriteStockRepository.findAllByOrderByCreatedAtAsc().stream()
-                .map(favorite -> stockRepository.findById(favorite.getStockId())
+        return userDataStore.favoriteStockIds(CurrentUser.id()).stream()
+                .map(stockId -> stockRepository.findById(stockId)
                         .map(s -> new StockSummary(s.getStockId(), s.getStockName(), s.getIndustryCategory()))
-                        .orElseGet(() -> new StockSummary(favorite.getStockId(), favorite.getStockId(), null)))
+                        .orElseGet(() -> new StockSummary(stockId, stockId, null)))
                 .toList();
     }
 
@@ -42,19 +41,12 @@ public class FavoriteStockService {
      * @param stockId 股票代號
      * @throws NoSuchElementException 股票代號不存在時拋出
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public void add(String stockId) {
-        if (favoriteStockRepository.existsByStockId(stockId)) {
-            return; // idempotent，已經是收藏就不重複處理
-        }
         if (!stockRepository.existsById(stockId)) {
             throw new NoSuchElementException("Unknown stock_id: " + stockId);
         }
-        FavoriteStockEntity favorite = new FavoriteStockEntity();
-        favorite.setStockId(stockId);
-        favorite.setCreatedBy(AuditActors.DEFAULT_USER);
-        favorite.setUpdatedBy(AuditActors.DEFAULT_USER);
-        favoriteStockRepository.save(favorite);
+        userDataStore.addFavorite(CurrentUser.id(), stockId);
     }
 
     /**
@@ -62,8 +54,8 @@ public class FavoriteStockService {
      *
      * @param stockId 股票代號
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public void remove(String stockId) {
-        favoriteStockRepository.deleteByStockId(stockId);
+        userDataStore.removeFavorite(CurrentUser.id(), stockId);
     }
 }

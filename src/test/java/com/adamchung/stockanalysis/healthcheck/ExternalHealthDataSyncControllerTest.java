@@ -8,6 +8,8 @@ import com.adamchung.stockanalysis.healthcheck.healthchecksync.ExternalHealthDat
 import com.adamchung.stockanalysis.healthcheck.healthchecksync.dto.ExternalSyncResult;
 import com.adamchung.stockanalysis.healthcheck.healthchecksync.dto.FinMindHealthCheckSyncResult;
 import com.adamchung.stockanalysis.healthcheck.healthchecksync.FinMindHealthCheckSyncService;
+import com.adamchung.stockanalysis.quota.DailyUsageService;
+import com.adamchung.stockanalysis.quota.SharedSyncFreshnessService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -40,9 +42,15 @@ class ExternalHealthDataSyncControllerTest {
     private FinMindHealthCheckSyncService finMindSyncService;
     @Mock
     private HealthCheckApplicationService healthCheckApplicationService;
+    @Mock
+    private DailyUsageService dailyUsageService;
+    @Mock
+    private SharedSyncFreshnessService sharedSyncFreshnessService;
 
     private final ExternalHealthDataSyncController controller() {
-        return new ExternalHealthDataSyncController(syncService, finMindSyncService, healthCheckApplicationService);
+        return new ExternalHealthDataSyncController(
+                syncService, finMindSyncService, healthCheckApplicationService,
+                dailyUsageService, sharedSyncFreshnessService);
     }
 
     @Test

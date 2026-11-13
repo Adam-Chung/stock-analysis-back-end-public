@@ -1,11 +1,11 @@
 package com.adamchung.stockanalysis.healthcheck;
 
-import com.adamchung.stockanalysis.common.AuditActors;
+import com.adamchung.stockanalysis.auth.CurrentUser;
 import com.adamchung.stockanalysis.groq.GroqClient;
 import com.adamchung.stockanalysis.groq.GroqClientException;
 import com.adamchung.stockanalysis.healthcheck.dto.HealthCheckResponse;
-import com.adamchung.stockanalysis.healthcheck.entity.StockHealthAiSuggestionEntity;
-import com.adamchung.stockanalysis.healthcheck.repository.StockHealthAiSuggestionRepository;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
+import com.adamchung.stockanalysis.quota.DailyUsageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,17 +24,20 @@ public class HealthCheckAiSuggestionService {
     private final HealthCheckApplicationService healthCheckService;
     private final HealthCheckAiSuggestionPromptBuilder promptBuilder;
     private final GroqClient groqClient;
-    private final StockHealthAiSuggestionRepository repository;
+    private final UserDataStore userDataStore;
+    private final DailyUsageService dailyUsageService;
 
     public HealthCheckAiSuggestionService(
             HealthCheckApplicationService healthCheckService,
             HealthCheckAiSuggestionPromptBuilder promptBuilder,
             GroqClient groqClient,
-            StockHealthAiSuggestionRepository repository) {
+            UserDataStore userDataStore,
+            DailyUsageService dailyUsageService) {
         this.healthCheckService = healthCheckService;
         this.promptBuilder = promptBuilder;
         this.groqClient = groqClient;
-        this.repository = repository;
+        this.userDataStore = userDataStore;
+        this.dailyUsageService = dailyUsageService;
     }
 
     /**
@@ -43,26 +46,18 @@ public class HealthCheckAiSuggestionService {
      * @param stockId 台股代號
      * @return 新產生並已快取的建議
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public HealthCheckResponse.AiSuggestionView generate(String stockId) {
+        dailyUsageService.reserveAiSuggestion();
         HealthCheckResponse snapshot = healthCheckService.get(stockId);
         GroqClient.GeneratedSuggestion generated =
                 groqClient.generate(promptBuilder.build(snapshot));
         String text = normalize(generated.text());
         validate(text, generated.modelName());
 
-        StockHealthAiSuggestionEntity suggestion = repository.findById(stockId)
-                .orElseGet(StockHealthAiSuggestionEntity::new);
-        boolean isNew = suggestion.getStockId() == null;
-        suggestion.setStockId(stockId);
-        suggestion.setSuggestionText(text);
-        suggestion.setModelName(generated.modelName());
-        if (isNew) {
-            suggestion.setCreatedBy(AuditActors.HEALTH_CHECK_AI_SUGGESTION);
-        }
-        suggestion.setUpdatedBy(AuditActors.HEALTH_CHECK_AI_SUGGESTION);
-        StockHealthAiSuggestionEntity saved = repository.saveAndFlush(suggestion);
-        return new HealthCheckResponse.AiSuggestionView(saved.getSuggestionText(), saved.getUpdatedAt());
+        UserDataStore.AiSuggestion saved = userDataStore.saveHealthAiSuggestion(
+                CurrentUser.id(), stockId, text, generated.modelName());
+        return new HealthCheckResponse.AiSuggestionView(saved.suggestionText(), saved.updatedAt());
     }
 
     /**

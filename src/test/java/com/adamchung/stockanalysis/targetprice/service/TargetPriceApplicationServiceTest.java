@@ -4,10 +4,8 @@ import com.adamchung.stockanalysis.finmind.sync.FinMindDataset;
 import com.adamchung.stockanalysis.finmind.sync.FinmindSyncLogEntity;
 import com.adamchung.stockanalysis.targetprice.dto.TargetPriceResponse;
 import com.adamchung.stockanalysis.targetprice.dto.TargetPriceSettingsRequest;
-import com.adamchung.stockanalysis.targetprice.entity.StockAiSuggestionEntity;
-import com.adamchung.stockanalysis.targetprice.entity.StockTargetPriceSettingEntity;
-import com.adamchung.stockanalysis.targetprice.repository.StockAiSuggestionRepository;
-import com.adamchung.stockanalysis.targetprice.repository.StockTargetPriceSettingRepository;
+import com.adamchung.stockanalysis.auth.TestSecurityContext;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
 import com.adamchung.stockanalysis.stock.entity.StockEntity;
 import com.adamchung.stockanalysis.stock.entity.StockDividendEntity;
 import com.adamchung.stockanalysis.stock.entity.StockFinancialStatementEntity;
@@ -51,7 +49,7 @@ class TargetPriceApplicationServiceTest {
     @Mock
     private StockRepository stockRepository;
     @Mock
-    private StockTargetPriceSettingRepository settingRepository;
+    private UserDataStore userDataStore;
     @Mock
     private StockPriceYearlyRepository priceRepository;
     @Mock
@@ -62,24 +60,22 @@ class TargetPriceApplicationServiceTest {
     private StockDividendRepository dividendRepository;
     @Mock
     private FinmindSyncLogRepository syncLogRepository;
-    @Mock
-    private StockAiSuggestionRepository aiSuggestionRepository;
 
     private TargetPriceApplicationService service;
 
     @BeforeEach
     void setUp() {
+        TestSecurityContext.login(42L);
         service = new TargetPriceApplicationService(
                 syncService,
                 new TargetPriceValuationService(),
                 stockRepository,
-                settingRepository,
+                userDataStore,
                 priceRepository,
                 valuationRepository,
                 financialStatementRepository,
                 dividendRepository,
-                syncLogRepository,
-                aiSuggestionRepository);
+                syncLogRepository);
     }
 
     @Test
@@ -111,7 +107,7 @@ class TargetPriceApplicationServiceTest {
     @Test
     void update_settings_persists_only_allowed_values_and_recalculates() {
         when(stockRepository.existsById("2330")).thenReturn(true);
-        when(settingRepository.findById("2330")).thenReturn(Optional.empty(), Optional.of(savedSetting()));
+        when(userDataStore.targetPriceSetting(42L, "2330")).thenReturn(Optional.of(savedSetting()));
         stubCompleteScreenDataExceptSetting();
         when(syncLogRepository.findByStockId("2330")).thenReturn(syncLogs());
 
@@ -119,11 +115,8 @@ class TargetPriceApplicationServiceTest {
                 new TargetPriceSettingsRequest("長期持有", 3, 10, "自訂備註", 2);
         TargetPriceResponse response = service.updateSettings("2330", request);
 
-        ArgumentCaptor<StockTargetPriceSettingEntity> captor =
-                ArgumentCaptor.forClass(StockTargetPriceSettingEntity.class);
-        verify(settingRepository).save(captor.capture());
-        assertThat(captor.getValue().getCreatedBy()).isEqualTo("default-user");
-        assertThat(captor.getValue().getUpdatedBy()).isEqualTo("default-user");
+        verify(userDataStore).saveTargetPriceSetting(42L, "2330", new UserDataStore.TargetPriceSetting(
+                "長期持有", (short) 3, (short) 10, "自訂備註", (short) 2));
         assertThat(response.epsAvgYears()).isEqualTo(3);
         assertThat(response.bpsAvgYears()).isEqualTo(10);
         verify(syncService, never()).incrementalUpdate("2330");
@@ -137,7 +130,8 @@ class TargetPriceApplicationServiceTest {
         assertThatThrownBy(() -> service.updateSettings("2330", request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("3, 5, 10");
-        verify(settingRepository, never()).save(any(StockTargetPriceSettingEntity.class));
+        verify(userDataStore, never()).saveTargetPriceSetting(
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString(), any());
     }
 
     @Test
@@ -148,7 +142,8 @@ class TargetPriceApplicationServiceTest {
 
         verify(syncService).incrementalUpdate("2330");
         verify(syncService).refreshLatestPriceIfStale("2330");
-        verify(settingRepository, never()).save(any(StockTargetPriceSettingEntity.class));
+        verify(userDataStore, never()).saveTargetPriceSetting(
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString(), any());
     }
 
     @Test
@@ -207,7 +202,7 @@ class TargetPriceApplicationServiceTest {
 
     /** Stubs all repositories required to assemble one deterministic screen. */
     private void stubCompleteScreenData(boolean completeHistoryOnFirstRead) {
-        when(settingRepository.findById("2330")).thenReturn(Optional.of(savedSetting()));
+        when(userDataStore.targetPriceSetting(42L, "2330")).thenReturn(Optional.of(savedSetting()));
         stubCompleteScreenDataExceptSetting();
         if (completeHistoryOnFirstRead) {
             when(syncLogRepository.findByStockId("2330")).thenReturn(syncLogs());
@@ -227,7 +222,7 @@ class TargetPriceApplicationServiceTest {
                 .thenReturn(epsRows());
         when(dividendRepository.findByStockIdOrderByAnnouncementDateDesc("2330"))
                 .thenReturn(List.of(dividend(LocalDate.now().minusDays(3)), dividend(LocalDate.now().plusDays(5))));
-        when(aiSuggestionRepository.findById("2330")).thenReturn(Optional.empty());
+        when(userDataStore.targetAiSuggestion(42L, "2330")).thenReturn(Optional.empty());
     }
 
     /** Creates a stock fixture with a current price. */
@@ -242,14 +237,8 @@ class TargetPriceApplicationServiceTest {
     }
 
     /** Creates persisted user settings. */
-    private StockTargetPriceSettingEntity savedSetting() {
-        StockTargetPriceSettingEntity setting = new StockTargetPriceSettingEntity();
-        setting.setStockId("2330");
-        setting.setEpsAvgYears((short) 3);
-        setting.setBpsAvgYears((short) 10);
-        setting.setSettingNote("自訂備註");
-        setting.setTargetPriceLevel((short) 2);
-        return setting;
+    private UserDataStore.TargetPriceSetting savedSetting() {
+        return new UserDataStore.TargetPriceSetting(null, (short) 3, (short) 10, "自訂備註", (short) 2);
     }
 
     /** Creates one complete annual price row. */

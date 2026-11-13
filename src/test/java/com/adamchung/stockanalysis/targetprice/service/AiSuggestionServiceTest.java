@@ -1,24 +1,22 @@
 package com.adamchung.stockanalysis.targetprice.service;
 
+import com.adamchung.stockanalysis.auth.TestSecurityContext;
 import com.adamchung.stockanalysis.groq.GroqClient;
 import com.adamchung.stockanalysis.groq.GroqClientException;
+import com.adamchung.stockanalysis.quota.DailyUsageService;
 import com.adamchung.stockanalysis.targetprice.AiSuggestionPromptBuilder;
 import com.adamchung.stockanalysis.targetprice.dto.TargetPriceResponse;
-import com.adamchung.stockanalysis.targetprice.entity.StockAiSuggestionEntity;
-import com.adamchung.stockanalysis.targetprice.repository.StockAiSuggestionRepository;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,80 +24,50 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AiSuggestionServiceTest {
 
-    @Mock
-    private TargetPriceApplicationService targetPriceService;
-    @Mock
-    private AiSuggestionPromptBuilder promptBuilder;
-    @Mock
-    private GroqClient groqClient;
-    @Mock
-    private StockAiSuggestionRepository repository;
-
+    @Mock private TargetPriceApplicationService targetPriceService;
+    @Mock private AiSuggestionPromptBuilder promptBuilder;
+    @Mock private GroqClient groqClient;
+    @Mock private UserDataStore userDataStore;
+    @Mock private DailyUsageService dailyUsageService;
     private AiSuggestionService service;
 
     @BeforeEach
     void setUp() {
-        service = new AiSuggestionService(targetPriceService, promptBuilder, groqClient, repository);
+        TestSecurityContext.login(42L);
+        service = new AiSuggestionService(
+                targetPriceService, promptBuilder, groqClient, userDataStore, dailyUsageService);
     }
 
     @Test
-    void generate_uses_persisted_snapshot_and_saves_valid_suggestion() {
+    void generate_reserves_quota_and_saves_the_normalized_result_for_current_user() {
         TargetPriceResponse snapshot = org.mockito.Mockito.mock(TargetPriceResponse.class);
         when(targetPriceService.getPersisted("2330")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(new GroqClient.GeneratedSuggestion(
-                " 可能機會的說明。  \n  主要風險的說明。僅供研究參考，非投資建議 ",
-                "openai/gpt-oss-20b"));
-        when(repository.findById("2330")).thenReturn(Optional.empty());
-        when(repository.saveAndFlush(any(StockAiSuggestionEntity.class))).thenAnswer(invocation -> {
-            StockAiSuggestionEntity saved = invocation.getArgument(0);
-            saved.setUpdatedAt(Instant.parse("2026-07-29T10:00:00Z"));
-            return saved;
-        });
+                " 機會。\n 風險。僅供研究參考，非投資建議 ", "openai/gpt-oss-20b"));
+        Instant updatedAt = Instant.parse("2026-07-29T10:00:00Z");
+        when(userDataStore.saveTargetAiSuggestion(
+                42L, "2330", "機會。\n\n風險。僅供研究參考，非投資建議", "openai/gpt-oss-20b"))
+                .thenReturn(new UserDataStore.AiSuggestion("機會。\n\n風險。僅供研究參考，非投資建議",
+                        "openai/gpt-oss-20b", updatedAt));
 
         TargetPriceResponse.AiSuggestionView result = service.generate("2330");
 
-        ArgumentCaptor<StockAiSuggestionEntity> captor = ArgumentCaptor.forClass(StockAiSuggestionEntity.class);
-        verify(repository).saveAndFlush(captor.capture());
-        // DEC-083：normalize() 改成保留段落換行（單一或連續換行都視為段落分隔，段落內部
-        // 才壓平空白），不能再像舊版一樣把所有換行壓成一個空格，否則 prompt 要求的
-        // 「分成兩段」形同虛設。
-        assertThat(captor.getValue().getSuggestionText())
-                .isEqualTo("可能機會的說明。\n\n主要風險的說明。僅供研究參考，非投資建議");
-        assertThat(captor.getValue().getCreatedBy()).isEqualTo("groq-suggestion");
-        assertThat(captor.getValue().getUpdatedBy()).isEqualTo("groq-suggestion");
-        assertThat(result.updatedAt()).isEqualTo(Instant.parse("2026-07-29T10:00:00Z"));
-        verify(targetPriceService).getPersisted("2330");
+        verify(dailyUsageService).reserveAiSuggestion();
+        assertThat(result.updatedAt()).isEqualTo(updatedAt);
     }
 
     @Test
-    void generate_saves_response_that_exceeds_prompt_target_but_stays_within_safety_limit() {
-        TargetPriceResponse snapshot = org.mockito.Mockito.mock(TargetPriceResponse.class);
-        when(targetPriceService.getPersisted("2330")).thenReturn(snapshot);
-        when(promptBuilder.build(snapshot)).thenReturn("prompt");
-        when(groqClient.generate("prompt")).thenReturn(
-                new GroqClient.GeneratedSuggestion("建".repeat(201), "openai/gpt-oss-20b"));
-        when(repository.findById("2330")).thenReturn(Optional.empty());
-        when(repository.saveAndFlush(any(StockAiSuggestionEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        service.generate("2330");
-
-        verify(repository).saveAndFlush(any(StockAiSuggestionEntity.class));
-    }
-
-    @Test
-    void generate_does_not_overwrite_cache_when_response_exceeds_800_character_safety_limit() {
+    void invalid_model_output_does_not_overwrite_personal_cache() {
         TargetPriceResponse snapshot = org.mockito.Mockito.mock(TargetPriceResponse.class);
         when(targetPriceService.getPersisted("2330")).thenReturn(snapshot);
         when(promptBuilder.build(snapshot)).thenReturn("prompt");
         when(groqClient.generate("prompt")).thenReturn(
                 new GroqClient.GeneratedSuggestion("建".repeat(801), "openai/gpt-oss-20b"));
 
-        assertThatThrownBy(() -> service.generate("2330"))
-                .isInstanceOf(GroqClientException.class)
-                .hasMessageContaining("800");
-        verify(repository, never()).findById("2330");
-        verify(repository, never()).saveAndFlush(any());
+        assertThatThrownBy(() -> service.generate("2330")).isInstanceOf(GroqClientException.class);
+        verify(userDataStore, never()).saveTargetAiSuggestion(
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
     }
 }

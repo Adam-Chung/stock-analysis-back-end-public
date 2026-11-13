@@ -1,14 +1,12 @@
 package com.adamchung.stockanalysis.targetprice.service;
 
-import com.adamchung.stockanalysis.common.AuditActors;
+import com.adamchung.stockanalysis.auth.CurrentUser;
 import com.adamchung.stockanalysis.finmind.sync.FinMindDataset;
 import com.adamchung.stockanalysis.finmind.sync.FinmindSyncLogEntity;
 import com.adamchung.stockanalysis.targetprice.dto.TargetPriceResponse;
 import com.adamchung.stockanalysis.targetprice.dto.TargetPriceSettingsRequest;
-import com.adamchung.stockanalysis.targetprice.entity.StockAiSuggestionEntity;
-import com.adamchung.stockanalysis.targetprice.entity.StockTargetPriceSettingEntity;
-import com.adamchung.stockanalysis.targetprice.repository.StockAiSuggestionRepository;
-import com.adamchung.stockanalysis.targetprice.repository.StockTargetPriceSettingRepository;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
+import com.adamchung.stockanalysis.userdata.UserDataStore.TargetPriceSetting;
 import com.adamchung.stockanalysis.stock.entity.StockEntity;
 import com.adamchung.stockanalysis.stock.entity.StockDividendEntity;
 import com.adamchung.stockanalysis.stock.entity.StockFinancialStatementEntity;
@@ -61,13 +59,12 @@ public class TargetPriceApplicationService {
     private final FinMindSyncService syncService;
     private final TargetPriceValuationService valuationService;
     private final StockRepository stockRepository;
-    private final StockTargetPriceSettingRepository settingRepository;
+    private final UserDataStore userDataStore;
     private final StockPriceYearlyRepository priceRepository;
     private final StockValuationYearlyRepository valuationRepository;
     private final StockFinancialStatementRepository financialStatementRepository;
     private final StockDividendRepository dividendRepository;
     private final FinmindSyncLogRepository syncLogRepository;
-    private final StockAiSuggestionRepository aiSuggestionRepository;
 
     /**
      * 建立目標價使用案例服務，注入所有需要的資料邊界。
@@ -75,35 +72,32 @@ public class TargetPriceApplicationService {
      * @param syncService FinMind 同步服務
      * @param valuationService 純運算估值服務
      * @param stockRepository 股票主檔 repository
-     * @param settingRepository 目標價設定 repository
+     * @param userDataStore 以目前使用者隔離的設定與 AI 建議資料
      * @param priceRepository 年度股價統計 repository
      * @param valuationRepository 年度估值統計 repository
      * @param financialStatementRepository 財報 repository
      * @param dividendRepository 股利 repository
      * @param syncLogRepository FinMind 同步紀錄 repository
-     * @param aiSuggestionRepository AI 建議 repository
      */
     public TargetPriceApplicationService(
             FinMindSyncService syncService,
             TargetPriceValuationService valuationService,
             StockRepository stockRepository,
-            StockTargetPriceSettingRepository settingRepository,
+            UserDataStore userDataStore,
             StockPriceYearlyRepository priceRepository,
             StockValuationYearlyRepository valuationRepository,
             StockFinancialStatementRepository financialStatementRepository,
             StockDividendRepository dividendRepository,
-            FinmindSyncLogRepository syncLogRepository,
-            StockAiSuggestionRepository aiSuggestionRepository) {
+            FinmindSyncLogRepository syncLogRepository) {
         this.syncService = syncService;
         this.valuationService = valuationService;
         this.stockRepository = stockRepository;
-        this.settingRepository = settingRepository;
+        this.userDataStore = userDataStore;
         this.priceRepository = priceRepository;
         this.valuationRepository = valuationRepository;
         this.financialStatementRepository = financialStatementRepository;
         this.dividendRepository = dividendRepository;
         this.syncLogRepository = syncLogRepository;
-        this.aiSuggestionRepository = aiSuggestionRepository;
     }
 
     /**
@@ -135,7 +129,7 @@ public class TargetPriceApplicationService {
      * @param request 已驗證的設定內容
      * @return 重新計算後的畫面回應
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public TargetPriceResponse updateSettings(String stockId, TargetPriceSettingsRequest request) {
         validateAverageWindow("epsAvgYears", request.epsAvgYears());
         validateAverageWindow("bpsAvgYears", request.bpsAvgYears());
@@ -146,20 +140,9 @@ public class TargetPriceApplicationService {
             throw new NoSuchElementException("Unknown stock_id: " + stockId);
         }
 
-        StockTargetPriceSettingEntity setting = settingRepository.findById(stockId)
-                .orElseGet(StockTargetPriceSettingEntity::new);
-        boolean isNew = setting.getStockId() == null;
-        setting.setStockId(stockId);
-        setting.setInvestmentStrategy(request.investmentStrategy());
-        setting.setEpsAvgYears(request.epsAvgYears().shortValue());
-        setting.setBpsAvgYears(request.bpsAvgYears().shortValue());
-        setting.setSettingNote(request.settingNote());
-        setting.setTargetPriceLevel(request.targetPriceLevel().shortValue());
-        if (isNew) {
-            setting.setCreatedBy(AuditActors.DEFAULT_USER);
-        }
-        setting.setUpdatedBy(AuditActors.DEFAULT_USER);
-        settingRepository.save(setting);
+        userDataStore.saveTargetPriceSetting(CurrentUser.id(), stockId, new TargetPriceSetting(
+                request.investmentStrategy(), request.epsAvgYears().shortValue(), request.bpsAvgYears().shortValue(),
+                request.settingNote(), request.targetPriceLevel().shortValue()));
         return assemble(stockId);
     }
 
@@ -202,7 +185,8 @@ public class TargetPriceApplicationService {
             throw new InsufficientValuationDataException("No latest close price available for stock_id=" + stockId);
         }
 
-        StockTargetPriceSettingEntity setting = settingRepository.findById(stockId)
+        long userId = CurrentUser.id();
+        TargetPriceSetting setting = userDataStore.targetPriceSetting(userId, stockId)
                 .orElseGet(this::defaultSetting);
         List<StockPriceYearlyEntity> prices = priceRepository.findByIdStockIdOrderByIdYearDesc(stockId);
         List<StockValuationYearlyEntity> valuations =
@@ -217,9 +201,9 @@ public class TargetPriceApplicationService {
 
         ValuationResult result = valuationService.calculate(new ValuationInput(
                 stock.getLatestClosePrice(),
-                setting.getEpsAvgYears(),
-                setting.getBpsAvgYears(),
-                setting.getTargetPriceLevel(),
+                setting.epsAvgYears(),
+                setting.bpsAvgYears(),
+                setting.targetPriceLevel(),
                 prices.stream().map(this::toPriceStats).toList(),
                 valuations.stream()
                         .map(row -> toValuationStats(row, avgClosePriceByYear, latestDividendByYear))
@@ -230,11 +214,10 @@ public class TargetPriceApplicationService {
                 stock.getCurrentYearHighPrice(),
                 stock.getCurrentYearLowPrice()));
 
-        StockAiSuggestionEntity suggestion = aiSuggestionRepository.findById(stockId).orElse(null);
-        TargetPriceResponse.AiSuggestionView suggestionView = suggestion == null
-                ? null
-                : new TargetPriceResponse.AiSuggestionView(
-                        suggestion.getSuggestionText(), suggestion.getUpdatedAt());
+        TargetPriceResponse.AiSuggestionView suggestionView = userDataStore.targetAiSuggestion(userId, stockId)
+                .map(suggestion -> new TargetPriceResponse.AiSuggestionView(
+                        suggestion.suggestionText(), suggestion.updatedAt()))
+                .orElse(null);
 
         return new TargetPriceResponse(
                 stock.getStockId(),
@@ -254,11 +237,11 @@ public class TargetPriceApplicationService {
                 result.yearsToRecover(),
                 result.yearsOfProfitIfSold(),
                 result.frontYear(),
-                setting.getInvestmentStrategy(),
-                setting.getEpsAvgYears(),
-                setting.getBpsAvgYears(),
-                setting.getSettingNote(),
-                setting.getTargetPriceLevel(),
+                setting.investmentStrategy(),
+                setting.epsAvgYears(),
+                setting.bpsAvgYears(),
+                setting.settingNote(),
+                setting.targetPriceLevel(),
                 result.dataCoverage(),
                 suggestionView,
                 yearlyLowPrices(prices, stock.getCurrentYearLowPrice()));
@@ -269,10 +252,9 @@ public class TargetPriceApplicationService {
      *
      * @return 預設的目標價設定
      */
-    private StockTargetPriceSettingEntity defaultSetting() {
-        StockTargetPriceSettingEntity setting = new StockTargetPriceSettingEntity();
-        setting.setSettingNote("EPS取近5年平均、BPS取近5年平均");
-        return setting;
+    private TargetPriceSetting defaultSetting() {
+        return new TargetPriceSetting(null, (short) 5, (short) 5,
+                "EPS取近5年平均、BPS取近5年平均", (short) 3);
     }
 
     /**

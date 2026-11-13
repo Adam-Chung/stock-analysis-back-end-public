@@ -1,12 +1,12 @@
 package com.adamchung.stockanalysis.targetprice.service;
 
-import com.adamchung.stockanalysis.common.AuditActors;
+import com.adamchung.stockanalysis.auth.CurrentUser;
 import com.adamchung.stockanalysis.groq.GroqClient;
 import com.adamchung.stockanalysis.groq.GroqClientException;
 import com.adamchung.stockanalysis.targetprice.AiSuggestionPromptBuilder;
 import com.adamchung.stockanalysis.targetprice.dto.TargetPriceResponse;
-import com.adamchung.stockanalysis.targetprice.entity.StockAiSuggestionEntity;
-import com.adamchung.stockanalysis.targetprice.repository.StockAiSuggestionRepository;
+import com.adamchung.stockanalysis.userdata.UserDataStore;
+import com.adamchung.stockanalysis.quota.DailyUsageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,17 +23,20 @@ public class AiSuggestionService {
     private final TargetPriceApplicationService targetPriceService;
     private final AiSuggestionPromptBuilder promptBuilder;
     private final GroqClient groqClient;
-    private final StockAiSuggestionRepository repository;
+    private final UserDataStore userDataStore;
+    private final DailyUsageService dailyUsageService;
 
     public AiSuggestionService(
             TargetPriceApplicationService targetPriceService,
             AiSuggestionPromptBuilder promptBuilder,
             GroqClient groqClient,
-            StockAiSuggestionRepository repository) {
+            UserDataStore userDataStore,
+            DailyUsageService dailyUsageService) {
         this.targetPriceService = targetPriceService;
         this.promptBuilder = promptBuilder;
         this.groqClient = groqClient;
-        this.repository = repository;
+        this.userDataStore = userDataStore;
+        this.dailyUsageService = dailyUsageService;
     }
 
     /**
@@ -42,26 +45,18 @@ public class AiSuggestionService {
      * @param stockId 台股代號
      * @return 新產生並已快取的建議
      */
-    @Transactional
+    @Transactional(rollbackFor = Throwable.class)
     public TargetPriceResponse.AiSuggestionView generate(String stockId) {
+        dailyUsageService.reserveAiSuggestion();
         TargetPriceResponse snapshot = targetPriceService.getPersisted(stockId);
         GroqClient.GeneratedSuggestion generated =
                 groqClient.generate(promptBuilder.build(snapshot));
         String text = normalize(generated.text());
         validate(text, generated.modelName());
 
-        StockAiSuggestionEntity suggestion = repository.findById(stockId)
-                .orElseGet(StockAiSuggestionEntity::new);
-        boolean isNew = suggestion.getStockId() == null;
-        suggestion.setStockId(stockId);
-        suggestion.setSuggestionText(text);
-        suggestion.setModelName(generated.modelName());
-        if (isNew) {
-            suggestion.setCreatedBy(AuditActors.GROQ_SUGGESTION);
-        }
-        suggestion.setUpdatedBy(AuditActors.GROQ_SUGGESTION);
-        StockAiSuggestionEntity saved = repository.saveAndFlush(suggestion);
-        return new TargetPriceResponse.AiSuggestionView(saved.getSuggestionText(), saved.getUpdatedAt());
+        UserDataStore.AiSuggestion saved = userDataStore.saveTargetAiSuggestion(
+                CurrentUser.id(), stockId, text, generated.modelName());
+        return new TargetPriceResponse.AiSuggestionView(saved.suggestionText(), saved.updatedAt());
     }
 
     /**
