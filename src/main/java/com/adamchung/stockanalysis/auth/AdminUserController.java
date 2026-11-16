@@ -48,7 +48,8 @@ public class AdminUserController {
                         UPDATE app_user SET enabled=:enabled, updated_at=now() WHERE id=:userId
                         RETURNING id, email, display_name, role, enabled, created_at, updated_at
                         """).param("enabled", request.enabled()).param("userId", userId)
-                .query(AdminUserView.class).single();
+                .query(AdminUserView.class).optional()
+                .orElseThrow(() -> new AppUserNotFoundException(userId));
     }
 
     /** 管理者看到的帳號摘要。 */

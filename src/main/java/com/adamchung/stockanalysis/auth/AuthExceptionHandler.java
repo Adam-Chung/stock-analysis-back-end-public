@@ -22,6 +22,12 @@ public class AuthExceptionHandler {
         return problem(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED", exception.getMessage());
     }
 
+    /** 管理操作指定不存在的帳號時回傳 404。 */
+    @ExceptionHandler(AppUserNotFoundException.class)
+    ProblemDetail handleUserNotFound(AppUserNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", exception.getMessage());
+    }
+
     /** Google Client ID 未部署時回傳 503，避免被誤認為使用者登入失敗。 */
     @ExceptionHandler(IllegalStateException.class)
     ProblemDetail handleConfiguration(IllegalStateException exception) {

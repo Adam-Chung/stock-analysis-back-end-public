@@ -8,7 +8,6 @@ import com.adamchung.stockanalysis.targetprice.dto.TargetPriceResponse;
 import com.adamchung.stockanalysis.userdata.UserDataStore;
 import com.adamchung.stockanalysis.quota.DailyUsageService;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 產生並快取每檔股票最新的 Groq AI 建議。prompt 的期望長度為 200 字；
@@ -45,7 +44,6 @@ public class AiSuggestionService {
      * @param stockId 台股代號
      * @return 新產生並已快取的建議
      */
-    @Transactional(rollbackFor = Throwable.class)
     public TargetPriceResponse.AiSuggestionView generate(String stockId) {
         dailyUsageService.reserveAiSuggestion();
         TargetPriceResponse snapshot = targetPriceService.getPersisted(stockId);

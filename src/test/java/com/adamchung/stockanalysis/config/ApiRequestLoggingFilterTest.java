@@ -1,12 +1,19 @@
 package com.adamchung.stockanalysis.config;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
 class ApiRequestLoggingFilterTest {
@@ -39,5 +46,29 @@ class ApiRequestLoggingFilterTest {
 
         assertThat(response.getHeader(ApiRequestLoggingFilter.CORRELATION_HEADER))
                 .matches("[0-9a-f-]{36}");
+    }
+
+    /** 未處理例外發生於 response commit 前時，log 必須記錄最終會回傳的 500。 */
+    @Test
+    void logsInternalServerErrorForUnhandledExceptionBeforeResponseCommit() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/stocks/search");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        doThrow(new ServletException("boom")).when(chain).doFilter(request, response);
+        Logger logger = (Logger) LoggerFactory.getLogger(ApiRequestLoggingFilter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            assertThatThrownBy(() -> filter.doFilter(request, response, chain))
+                    .isInstanceOf(ServletException.class);
+            assertThat(appender.list)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(message -> message.contains("status=500"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 }

@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 public class ApiRequestLoggingFilter extends OncePerRequestFilter {
 
     static final String CORRELATION_HEADER = "X-Correlation-ID";
+    static final int UNHANDLED_ERROR_STATUS = HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
     private static final String MDC_KEY = "correlationId";
     private static final Pattern SAFE_CORRELATION_ID = Pattern.compile("[A-Za-z0-9._-]{1,64}");
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiRequestLoggingFilter.class);
@@ -63,11 +64,12 @@ public class ApiRequestLoggingFilter extends OncePerRequestFilter {
                     response.getStatus(),
                     elapsedMillis(startedAt));
         } catch (RuntimeException | ServletException | IOException exception) {
+            int failureStatus = response.isCommitted() ? response.getStatus() : UNHANDLED_ERROR_STATUS;
             LOGGER.error(
                     "API request failed: method={}, path={}, status={}, durationMs={}, errorType={}",
                     request.getMethod(),
                     request.getRequestURI(),
-                    response.getStatus(),
+                    failureStatus,
                     elapsedMillis(startedAt),
                     exception.getClass().getSimpleName(),
                     exception);

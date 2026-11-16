@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
@@ -49,5 +50,15 @@ class HealthCheckAiSuggestionServiceTest {
 
         verify(dailyUsageService).reserveAiSuggestion();
         assertThat(result.updatedAt()).isEqualTo(updatedAt);
+    }
+
+    /** 企業體質 AI 外部呼叫不得包在資料庫交易內。 */
+    @Test
+    void generate_doesNotOpenATransactionAroundGroq() throws NoSuchMethodException {
+        Transactional transactional = HealthCheckAiSuggestionService.class
+                .getMethod("generate", String.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transactional).isNull();
     }
 }

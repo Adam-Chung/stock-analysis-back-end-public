@@ -2,6 +2,7 @@ package com.adamchung.stockanalysis.userdata;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -80,6 +81,7 @@ public class UserDataStore {
     }
 
     /** 儲存目標價頁的個人 AI 建議。 */
+    @Transactional(rollbackFor = Throwable.class)
     public AiSuggestion saveTargetAiSuggestion(long userId, String stockId, String text, String modelName) {
         return saveAiSuggestion("user_stock_ai_suggestion", userId, stockId, text, modelName);
     }
@@ -90,6 +92,7 @@ public class UserDataStore {
     }
 
     /** 儲存企業體質頁的個人 AI 建議。 */
+    @Transactional(rollbackFor = Throwable.class)
     public AiSuggestion saveHealthAiSuggestion(long userId, String stockId, String text, String modelName) {
         return saveAiSuggestion("user_stock_health_ai_suggestion", userId, stockId, text, modelName);
     }

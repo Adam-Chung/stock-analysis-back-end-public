@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
@@ -69,5 +70,15 @@ class AiSuggestionServiceTest {
         verify(userDataStore, never()).saveTargetAiSuggestion(
                 org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    /** AI 外部呼叫不得包在資料庫交易內，避免等待 Groq 時占用 connection。 */
+    @Test
+    void generate_doesNotOpenATransactionAroundGroq() throws NoSuchMethodException {
+        Transactional transactional = AiSuggestionService.class
+                .getMethod("generate", String.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transactional).isNull();
     }
 }

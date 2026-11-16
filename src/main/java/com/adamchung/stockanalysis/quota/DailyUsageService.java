@@ -5,6 +5,8 @@ import com.adamchung.stockanalysis.auth.CurrentUser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -56,9 +58,10 @@ public class DailyUsageService {
     }
 
     /**
-     * 保留 AI 額度；管理者略過個人上限，但仍共用全站免費額度保護。
-     * 外層交易失敗時已寫入的額度會一併回滾。
+     * 獨立提交一次 AI 呼叫額度；管理者略過個人上限，但仍共用全站免費額度保護。
+     * 額度代表實際送出的外部呼叫嘗試，因此後續 Groq 失敗時也不退回，避免失敗重試繞過上限。
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Throwable.class)
     public void reserveAiSuggestion() {
         AppUserPrincipal principal = CurrentUser.require();
         if (!principal.admin()) {

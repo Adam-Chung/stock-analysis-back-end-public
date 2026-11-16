@@ -6,9 +6,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -63,6 +66,18 @@ class DailyUsageServiceTest {
 
         verify(statement).param("scopeKey", "USER:7");
         verify(statement).param("scopeKey", "GLOBAL");
+    }
+
+    /** AI 額度必須使用獨立交易提交，避免後續外部呼叫失敗時退回額度。 */
+    @Test
+    void reserveAiSuggestion_commitsInAnIndependentTransaction() throws NoSuchMethodException {
+        Transactional transactional = DailyUsageService.class
+                .getMethod("reserveAiSuggestion")
+                .getAnnotation(Transactional.class);
+
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+        assertThat(transactional.rollbackFor()).containsExactly(Throwable.class);
     }
 
     /**
