@@ -11,9 +11,15 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+  session:
+    jdbc:
+      initialize-schema: never
 
 server:
   port: ${PORT:8080}
+  servlet:
+    session:
+      timeout: 30d
 
 management:
   endpoints:
