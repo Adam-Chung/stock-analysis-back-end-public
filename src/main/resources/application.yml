@@ -5,6 +5,12 @@ spring:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/stock_analysis}
     username: ${DATABASE_USERNAME:postgres}
     password: ${DATABASE_PASSWORD:}
+    hikari:
+      # Keep no idle PostgreSQL connections so a serverless database can scale to zero.
+      minimum-idle: 0
+      maximum-pool-size: 3
+      idle-timeout: 60000
+      keepalive-time: 0
   jpa:
     open-in-view: false
     hibernate:
